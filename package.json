@@ -1,0 +1,21 @@
+{
+  "name": "query-balatro",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Balatro系、クエリのパターンで役を作るスコアアタック",
+  "engines": {
+    "node": ">=22.6"
+  },
+  "scripts": {
+    "start": "node src/cli/main.ts",
+    "seed": "node src/data/seed.ts",
+    "test": "node --test",
+    "typecheck": "tsc --noEmit",
+    "balance": "node scripts/balance.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.9.0"
+  }
+}
