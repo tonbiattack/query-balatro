@@ -1,0 +1,101 @@
+name: Deploy Web UI to GitHub Pages
+
+# main に更新が入ったら、Web UI をビルドして GitHub Pages へ公開する。
+# Issue #8「GitHub Pagesへ自動デプロイするGitHub Actionsワークフローを用意する」に対応。
+
+on:
+  push:
+    branches: [main]
+  # 手動実行もできるようにする（デプロイだけやり直したいとき）
+  workflow_dispatch:
+
+# Pages へのデプロイに必要な権限
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# 同時デプロイを避ける（後から来たものを優先）
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # 1. 検証（テストと型チェックが通らなければデプロイしない）
+  # ---------------------------------------------------------------------------
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: 依存をインストール
+        run: npm ci
+
+      - name: 型チェック（Node 側）
+        run: npx tsc --noEmit
+
+      - name: 型チェック（Web 側）
+        run: npx tsc --noEmit -p tsconfig.web.json
+
+      - name: テスト
+        run: node --test
+
+  # ---------------------------------------------------------------------------
+  # 2. ビルド
+  # ---------------------------------------------------------------------------
+  build:
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: 依存をインストール
+        run: npm ci
+
+      - name: Web UI をビルド
+        run: node scripts/build-web.ts
+
+      - name: ビルド成果物を確認
+        run: |
+          set -e
+          for f in index.html styles.css app.js sql-wasm.wasm .nojekyll; do
+            if [ ! -f "dist/$f" ]; then
+              echo "::error::dist/$f がありません"
+              exit 1
+            fi
+          done
+          echo "ビルド成果物:"
+          ls -lh dist/
+
+      - name: Pages 用に設定
+        uses: actions/configure-pages@v5
+
+      - name: 成果物をアップロード
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  # ---------------------------------------------------------------------------
+  # 3. デプロイ
+  # ---------------------------------------------------------------------------
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: GitHub Pages へデプロイ
+        id: deployment
+        uses: actions/deploy-pages@v4

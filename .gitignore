@@ -4,3 +4,6 @@ data/*.db-journal
 data/*.db-wal
 data/*.db-shm
 *.log
+
+# Web ビルドの出力（CI が生成して Pages へ配信する）
+dist/

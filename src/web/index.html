@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="dark" />
+    <meta
+      name="description"
+      content="Query Balatro — 断片カードを並べてクエリを組み、チップ×マルチでスコアを伸ばすスコアアタック。"
+    />
+    <title>Query Balatro</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <!-- 起動中の表示。sql.js の wasm 読み込みは数百ms かかるので、
+         空白の画面を見せずに「準備中」を出す（遅さは罪）。 -->
+    <div id="boot" class="boot" role="status" aria-live="polite">
+      <p class="boot__mark">Query Balatro</p>
+      <p class="boot__note">クエリエンジンを準備しています…</p>
+    </div>
+
+    <main id="app" class="app" hidden>
+      <!-- ================= ステータス ================= -->
+      <header class="status" aria-label="ランの状況">
+        <div class="status__row">
+          <p class="status__blind">
+            <span class="status__ante" id="ante-label">アンティ1</span>
+            <span class="status__kind" id="blind-label">Small</span>
+          </p>
+          <p class="status__target">
+            <span class="status__target-label">目標</span>
+            <span class="status__target-value" id="target-value">0</span>
+          </p>
+        </div>
+
+        <div class="meter" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="meter">
+          <div class="meter__fill" id="meter-fill"></div>
+        </div>
+
+        <div class="status__row status__row--tight">
+          <p class="status__score">
+            <span id="score-value">0</span>
+            <span class="status__score-sep">/</span>
+            <span class="status__score-target" id="score-target">0</span>
+          </p>
+          <p class="status__counts">
+            <span class="count" id="plays-left">プレイ 4</span>
+            <span class="count" id="discards-left">ディスカード 2</span>
+          </p>
+        </div>
+
+        <p class="status__boss" id="boss-rule" hidden></p>
+      </header>
+
+      <!-- ================= 盤面 ================= -->
+      <div class="board">
+        <!-- クエリコンソール（この画面の主役） -->
+        <section class="console" aria-label="組み立て中のクエリ">
+          <div class="console__bar">
+            <span class="console__dot" aria-hidden="true"></span>
+            <span class="console__title">query</span>
+            <span class="console__meta" id="console-meta">断片をえらぶと実行されます</span>
+          </div>
+
+          <pre class="console__sql" id="console-sql" aria-live="polite"><span class="console__idle">-- 手札から断片をえらんでください</span></pre>
+
+          <div class="console__verdict" id="console-verdict" aria-live="polite">
+            <p class="verdict__idle">断片を1枚以上えらぶと、成立する役とスコアが出ます。</p>
+          </div>
+        </section>
+
+        <!-- ジョーカー -->
+        <aside class="jokers" aria-label="ジョーカー">
+          <h2 class="jokers__title">
+            ジョーカー <span class="jokers__count" id="joker-count">0/5</span>
+          </h2>
+          <ul class="jokers__list" id="joker-list"></ul>
+        </aside>
+      </div>
+
+      <!-- ================= 手札 ================= -->
+      <section class="hand" aria-label="手札">
+        <h2 class="hand__title">
+          手札
+          <span class="hand__hint" id="hand-hint">最大5枚まで えらべます</span>
+        </h2>
+        <ul class="hand__list" id="hand-list"></ul>
+      </section>
+
+      <!-- ================= 操作 ================= -->
+      <div class="actions" id="actions">
+        <button type="button" class="btn btn--primary" id="btn-play" disabled>
+          プレイ<span class="btn__sub" id="btn-play-sub"></span>
+        </button>
+        <button type="button" class="btn" id="btn-discard" disabled>ディスカード</button>
+        <button type="button" class="btn btn--ghost" id="btn-clear" disabled>えらび直す</button>
+      </div>
+
+      <!-- ================= オーバーレイ（報酬・結果） ================= -->
+      <div class="overlay" id="overlay" hidden>
+        <div class="overlay__panel" role="dialog" aria-modal="true" aria-labelledby="overlay-title">
+          <h2 class="overlay__title" id="overlay-title"></h2>
+          <div class="overlay__body" id="overlay-body"></div>
+          <div class="overlay__actions" id="overlay-actions"></div>
+        </div>
+      </div>
+
+      <!-- ================= 直前の結果 ================= -->
+      <section class="feedback" id="feedback" hidden aria-live="polite">
+        <h2 class="feedback__headline" id="feedback-headline"></h2>
+        <p class="feedback__detail" id="feedback-detail"></p>
+        <ul class="feedback__lines" id="feedback-lines"></ul>
+      </section>
+    </main>
+
+    <noscript>
+      <p class="noscript">このゲームは JavaScript が必要です。ブラウザの設定を確認してください。</p>
+    </noscript>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

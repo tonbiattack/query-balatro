@@ -4,8 +4,8 @@
  * 仕様書（docs/SPEC.md「数値仕様」「勝敗条件」）に従い、
  * ブラインド単位のプレイ／ディスカードとアンティ進行を司る。
  *
- * 依存方向は types ← data ← db ← logic。logic は `QueryEngine` インターフェースにのみ依存し、
- * 既定エンジンは engine-provider.ts が実行時に遅延解決する。
+ * 依存方向は types ← data ← db ← logic。logic は `QueryEngine` インターフェースにのみ依存する。
+ * 既定エンジン（Node 専用）は CLI 側が明示的に注入する。ブラウザは browser-engine を注入する。
  */
 
 import type {
@@ -37,7 +37,6 @@ import {
 } from "../data/index.ts";
 import { scoreQuery } from "./score.ts";
 import { mulberry32, shuffleInPlace } from "./rng.ts";
-import { resolveDefaultEngine } from "./engine-provider.ts";
 
 // ---------------------------------------------------------------------------
 // 内部ヘルパ
@@ -129,7 +128,8 @@ function validateFragmentIds(
  *
  * @param options 乱数の種・初期ジョーカー
  * @param engine クエリ実行基盤。省略時は `src/db/engine.ts` の
- *   `createEngineFromSchema()` を実行時に遅延解決する（テストではフェイクを注入する）
+ *   `createEngineFromSchema()` を実行時に遅延解決する（テストではフェイクを注入する）。
+ *   **ブラウザでは必ず注入すること**（既定エンジンは Node 専用のため）。
  */
 export function createRun(
   options: CreateRunOptions = {},
@@ -138,7 +138,17 @@ export function createRun(
   // エンジンは最初の play() まで解決しない（生成だけなら db 未実装でも成功する）
   let resolvedEngine: QueryEngine | undefined = engine;
   const getEngine = (): QueryEngine => {
-    if (!resolvedEngine) resolvedEngine = resolveDefaultEngine();
+    if (!resolvedEngine) {
+      // 既定エンジンは Node 専用（node:sqlite / node:module を使う）。
+      // ブラウザ向けバンドルに巻き込まれないよう、**動的 import** で解決する。
+      // 静的 import にすると esbuild が engine-provider.ts を辿り、
+      // `node:module` の解決で失敗する。
+      throw new Error(
+        "クエリエンジンが注入されていません。" +
+          "createRun(options, engine) の第2引数でエンジンを渡してください。" +
+          "（ブラウザでは createBrowserEngine() を使います）",
+      );
+    }
     return resolvedEngine;
   };
 
