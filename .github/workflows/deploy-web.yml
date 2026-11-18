@@ -6,6 +6,9 @@ name: Deploy Web UI to GitHub Pages
 on:
   push:
     branches: [main]
+  # PR でも検証だけは回す（壊れたものを main に入れないため）
+  pull_request:
+    branches: [main]
   # 手動実行もできるようにする（デプロイだけやり直したいとき）
   workflow_dispatch:
 
@@ -87,9 +90,11 @@ jobs:
           path: dist
 
   # ---------------------------------------------------------------------------
-  # 3. デプロイ
+  # 3. デプロイ（main への push のときだけ）
   # ---------------------------------------------------------------------------
   deploy:
+    # PR ではビルドまでで止める（デプロイは main に入ってから）
+    if: github.event_name != 'pull_request'
     needs: build
     runs-on: ubuntu-latest
     environment:
