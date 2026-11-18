@@ -1,0 +1,961 @@
+/* ==========================================================================
+   Query Balatro — Web UI
+   ==========================================================================
+
+   設計方針:
+     題材は「SQLコンソール」と「物理的なカード」の同居。
+     主役は組み立て中のクエリ（コンソール）。カードは紙の手触り、
+     背景は深いインク色。装飾は主役の邪魔をしない範囲に留める。
+
+   色:
+     --ink      深い青みの黒（純黒は使わない。SQLコンソールの落ち着き）
+     --paper    カードの紙面（生成りのクリーム）
+     --sql      SQLキーワードのターミナル緑
+     --chip     チップの琥珀
+     --mult     マルチの珊瑚
+     --focus    操作可能な要素の青
+
+   タイポグラフィ:
+     SQL とスコア数値は等幅（題材がSQLなので必然）。
+     本文は日本語が読みやすいサンセリフ。装飾目的の等幅ラベルは使わない。
+   ========================================================================== */
+
+:root {
+  /* 面 */
+  --ink: #0e1420;
+  --ink-2: #151d2c;
+  --ink-3: #1e2839;
+  --ink-4: #2a3648;
+  --paper: #f3e9d6;
+  --paper-2: #e4d7bd;
+  --paper-3: #cbb99a;
+
+  /* 文字 */
+  --text: #e8eef7;
+  --text-dim: #9aa8bd;
+  --text-faint: #6b7a90;
+  --on-paper: #2a2118;
+  --on-paper-dim: #6b5c47;
+
+  /* アクセント */
+  --sql: #7ee787;
+  --sql-dim: #4a8f52;
+  --chip: #f0b429;
+  --mult: #ff8a7a;
+  --focus: #6cb6ff;
+  --danger: #ff7b72;
+  --ok: #7ee787;
+
+  /* 形 */
+  --radius: 10px;
+  --radius-sm: 6px;
+  --radius-lg: 16px;
+
+  /* 余白の基準 */
+  --gap: 12px;
+  --pad: 14px;
+
+  /* 影（紙の浮き） */
+  --shadow-card: 0 1px 0 rgba(255, 255, 255, 0.5) inset, 0 2px 6px rgba(0, 0, 0, 0.35);
+  --shadow-panel: 0 8px 28px rgba(0, 0, 0, 0.45);
+
+  /* 文字組み */
+  --font-ui: "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Yu Gothic UI",
+    system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "SFMono-Regular", "Cascadia Mono", "Consolas", "Liberation Mono", "Menlo",
+    monospace;
+}
+
+/* --------------------------------------------------------------------------
+   基礎
+   -------------------------------------------------------------------------- */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  /* iOS で横スクロールしないように */
+  overflow-x: hidden;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  min-height: 100dvh;
+  background:
+    radial-gradient(1200px 600px at 50% -10%, #1a2436 0%, transparent 70%),
+    var(--ink);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 15px;
+  line-height: 1.6;
+  /* セーフエリア（ノッチ・ホームバー）を尊重する */
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom)
+    env(safe-area-inset-left);
+}
+
+/* 押せるものは必ずフォーカスが見える（アクセシビリティ） */
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/**
+ * `hidden` 属性を必ず効かせる。
+ *
+ * `display: flex` / `display: grid` を指定した要素は、ブラウザ既定の
+ * `[hidden] { display: none }` を**上書きしてしまう**ため、
+ * `element.hidden = true` にしても表示されたままになる。
+ * 起動直後に app が透けて見えたり、オーバーレイが消えない事故を防ぐ。
+ */
+[hidden] {
+  display: none !important;
+}
+
+/* 動きを減らす設定を尊重する */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   起動中
+   -------------------------------------------------------------------------- */
+
+.boot {
+  display: grid;
+  place-content: center;
+  gap: 8px;
+  min-height: 100dvh;
+  text-align: center;
+}
+
+.boot__mark {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 20px;
+  letter-spacing: 0.02em;
+  color: var(--sql);
+}
+
+.boot__note {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
+.noscript {
+  padding: 24px;
+  color: var(--danger);
+  text-align: center;
+}
+
+/* --------------------------------------------------------------------------
+   アプリ全体
+   -------------------------------------------------------------------------- */
+
+.app {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap);
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: var(--pad);
+  /* 下部の操作バーに隠れないよう余白を確保する */
+  padding-bottom: calc(var(--pad) + 76px);
+}
+
+/* --------------------------------------------------------------------------
+   ステータス（常に上部に固定。大事なものを大きく）
+   -------------------------------------------------------------------------- */
+
+.status {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: var(--pad);
+  background: color-mix(in srgb, var(--ink-2) 92%, transparent);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--ink-4);
+  border-radius: var(--radius);
+}
+
+.status__row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.status__row--tight {
+  align-items: center;
+}
+
+.status__blind {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0;
+}
+
+.status__ante {
+  font-size: 13px;
+  color: var(--text-dim);
+  letter-spacing: 0.04em;
+}
+
+.status__kind {
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+/* Boss ブラインドは色で分かるようにする */
+.status__kind[data-kind="boss"] {
+  color: var(--mult);
+}
+
+.status__target {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin: 0;
+}
+
+.status__target-label {
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.status__target-value {
+  font-family: var(--font-mono);
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--chip);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 進捗バー */
+.meter {
+  height: 8px;
+  background: var(--ink-4);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.meter__fill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, var(--sql-dim), var(--sql));
+  border-radius: 999px;
+  transition: width 220ms ease-out;
+}
+
+/* 突破したら色を変える */
+.meter__fill[data-cleared="true"] {
+  background: linear-gradient(90deg, var(--chip), #ffd76e);
+}
+
+.status__score {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 22px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+}
+
+.status__score-sep {
+  color: var(--text-faint);
+  font-weight: 400;
+  margin: 0 2px;
+}
+
+.status__score-target {
+  font-size: 15px;
+  color: var(--text-dim);
+  font-weight: 400;
+}
+
+.status__counts {
+  display: flex;
+  gap: 10px;
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.count {
+  font-variant-numeric: tabular-nums;
+}
+
+/* 残りが少なくなったら目立たせる */
+.count[data-low="true"] {
+  color: var(--mult);
+  font-weight: 700;
+}
+
+.status__boss {
+  margin: 0;
+  padding: 6px 10px;
+  background: color-mix(in srgb, var(--mult) 14%, transparent);
+  border-left: 3px solid var(--mult);
+  border-radius: var(--radius-sm);
+  font-size: 12.5px;
+  color: #ffc9c2;
+}
+
+/* --------------------------------------------------------------------------
+   盤面（コンソール + ジョーカー）
+   -------------------------------------------------------------------------- */
+
+.board {
+  display: grid;
+  gap: var(--gap);
+  grid-template-columns: 1fr;
+}
+
+/* --------------------------------------------------------------------------
+   クエリコンソール（この画面の主役）
+   -------------------------------------------------------------------------- */
+
+.console {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: #0a0f18;
+  border: 1px solid var(--ink-4);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.console__bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--ink-3);
+  border-bottom: 1px solid var(--ink-4);
+}
+
+.console__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--sql-dim);
+  flex: none;
+}
+
+.console__title {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.console__meta {
+  margin-left: auto;
+  font-size: 11.5px;
+  color: var(--text-faint);
+  text-align: right;
+}
+
+.console__sql {
+  margin: 0;
+  padding: 12px;
+  min-height: 76px;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.65;
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-word;
+  /* 長いSQLでも高さが暴れないように */
+  max-height: 168px;
+  overflow-y: auto;
+}
+
+.console__idle {
+  color: var(--text-faint);
+}
+
+/* SQL の色分け（キーワードだけ。やりすぎない） */
+.sql-kw {
+  color: var(--sql);
+  font-weight: 600;
+}
+
+.sql-str {
+  color: var(--chip);
+}
+
+.sql-num {
+  color: var(--mult);
+}
+
+.sql-fn {
+  color: var(--focus);
+}
+
+/* 判定（役・スコア） */
+.console__verdict {
+  padding: 10px 12px;
+  border-top: 1px solid var(--ink-4);
+  background: var(--ink-2);
+}
+
+.verdict__idle {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--text-faint);
+}
+
+.verdict {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 12px;
+}
+
+.verdict__rank {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.verdict__mult {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--mult);
+  font-weight: 700;
+}
+
+.verdict__total {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 19px;
+  font-weight: 700;
+  color: var(--chip);
+  font-variant-numeric: tabular-nums;
+}
+
+.verdict__rows {
+  width: 100%;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+/* 不成立の説明 */
+.verdict--bad .verdict__rank {
+  color: var(--danger);
+}
+
+.verdict__reason {
+  margin: 0;
+  font-size: 12.5px;
+  color: #ffc9c2;
+}
+
+/* --------------------------------------------------------------------------
+   ジョーカー
+   -------------------------------------------------------------------------- */
+
+.jokers {
+  padding: var(--pad);
+  background: var(--ink-2);
+  border: 1px solid var(--ink-4);
+  border-radius: var(--radius);
+}
+
+.jokers__title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-dim);
+}
+
+.jokers__count {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--text-faint);
+}
+
+.jokers__list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.joker {
+  padding: 7px 10px;
+  background: var(--ink-3);
+  border-left: 3px solid var(--sql-dim);
+  border-radius: var(--radius-sm);
+}
+
+.joker__name {
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.joker__desc {
+  font-size: 11.5px;
+  color: var(--text-dim);
+  line-height: 1.45;
+}
+
+/* 効果が発動したジョーカーを光らせる */
+.joker[data-active="true"] {
+  border-left-color: var(--chip);
+  background: color-mix(in srgb, var(--chip) 10%, var(--ink-3));
+}
+
+.jokers__empty {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+/* --------------------------------------------------------------------------
+   手札
+   -------------------------------------------------------------------------- */
+
+.hand {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.hand__title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-dim);
+}
+
+.hand__hint {
+  font-size: 11.5px;
+  font-weight: 400;
+  color: var(--text-faint);
+}
+
+.hand__list {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* カード（紙の手触り） */
+.card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  padding: 10px;
+  text-align: left;
+  font-family: inherit;
+  font-size: inherit;
+  color: var(--on-paper);
+  background: linear-gradient(160deg, var(--paper) 0%, var(--paper-2) 100%);
+  border: 1px solid var(--paper-3);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-card);
+  cursor: pointer;
+  transition:
+    transform 120ms ease-out,
+    box-shadow 120ms ease-out;
+  /* タップ時のハイライトを消す */
+  -webkit-tap-highlight-color: transparent;
+}
+
+.card:hover {
+  transform: translateY(-2px);
+}
+
+.card:active {
+  transform: translateY(0);
+}
+
+/* 選択中は「持ち上がった」見た目にする */
+.card[aria-pressed="true"] {
+  transform: translateY(-4px);
+  border-color: var(--chip);
+  box-shadow:
+    0 0 0 2px var(--chip),
+    0 6px 16px rgba(0, 0, 0, 0.45);
+}
+
+/* 選択順の番号（並べた順が分かるように） */
+.card__order {
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  display: grid;
+  place-content: center;
+  width: 22px;
+  height: 22px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--ink);
+  background: var(--chip);
+  border-radius: 50%;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+}
+
+.card__name {
+  font-size: 12.5px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.card__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+
+.card__tag {
+  padding: 1px 5px;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  color: var(--on-paper-dim);
+  background: color-mix(in srgb, var(--on-paper) 8%, transparent);
+  border-radius: 3px;
+}
+
+.card__chips {
+  margin-top: auto;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  color: #8a6a1f;
+}
+
+/* 選択できないカード（上限到達など） */
+.card:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+  transform: none;
+}
+
+/* --------------------------------------------------------------------------
+   操作（下部に固定。少ない操作数で実行できるように）
+   -------------------------------------------------------------------------- */
+
+.actions {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 30;
+  display: flex;
+  gap: 8px;
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 10px var(--pad) calc(10px + env(safe-area-inset-bottom));
+  background: color-mix(in srgb, var(--ink) 94%, transparent);
+  backdrop-filter: blur(12px);
+  border-top: 1px solid var(--ink-4);
+}
+
+.btn {
+  flex: 1;
+  min-height: 48px;
+  padding: 8px 10px;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  /* ボタンの文言は折り返さない（「ディスカー/ド」のような不格好な改行を防ぐ） */
+  white-space: nowrap;
+  color: var(--text);
+  background: var(--ink-3);
+  border: 1px solid var(--ink-4);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition:
+    background 120ms ease-out,
+    transform 80ms ease-out;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.btn:hover:not(:disabled) {
+  background: var(--ink-4);
+}
+
+.btn:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.btn--primary {
+  flex: 1.4;
+  color: var(--ink);
+  background: var(--sql);
+  border-color: var(--sql);
+}
+
+.btn--primary:hover:not(:disabled) {
+  background: #9bf0a3;
+}
+
+.btn--ghost {
+  flex: 0.9;
+  background: transparent;
+}
+
+/* 狭い画面では文字を少し詰める（折り返さずに収める） */
+@media (max-width: 400px) {
+  .btn {
+    font-size: 13px;
+    padding: 8px 6px;
+  }
+}
+
+.btn__sub {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  opacity: 0.75;
+}
+
+/* --------------------------------------------------------------------------
+   直前の結果
+   -------------------------------------------------------------------------- */
+
+.feedback {
+  padding: var(--pad);
+  background: var(--ink-2);
+  border: 1px solid var(--ink-4);
+  border-radius: var(--radius);
+}
+
+.feedback__headline {
+  margin: 0 0 4px;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.feedback__detail {
+  margin: 0 0 8px;
+  font-size: 12.5px;
+  color: var(--text-dim);
+}
+
+.feedback__lines {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--text-dim);
+}
+
+/* 失敗は色で分かるように */
+.feedback[data-ok="false"] .feedback__headline {
+  color: var(--danger);
+}
+
+/* --------------------------------------------------------------------------
+   オーバーレイ（ジョーカー報酬・ラン結果）
+   -------------------------------------------------------------------------- */
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: var(--pad);
+  background: rgba(6, 10, 16, 0.82);
+  backdrop-filter: blur(6px);
+}
+
+.overlay__panel {
+  width: min(560px, 100%);
+  max-height: 86dvh;
+  overflow-y: auto;
+  padding: 20px;
+  background: var(--ink-2);
+  border: 1px solid var(--ink-4);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-panel);
+}
+
+.overlay__title {
+  margin: 0 0 4px;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.overlay__body {
+  margin-bottom: 16px;
+  font-size: 13.5px;
+  color: var(--text-dim);
+}
+
+.overlay__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* 報酬の選択肢 */
+.choice {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: 12px;
+  text-align: left;
+  font-family: inherit;
+  font-size: inherit;
+  color: var(--text);
+  background: var(--ink-3);
+  border: 1px solid var(--ink-4);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: border-color 120ms ease-out;
+}
+
+.choice:hover {
+  border-color: var(--chip);
+}
+
+.choice__name {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.choice__desc {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+/* ラン結果の数値 */
+.summary {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+}
+
+.summary__row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--ink-4);
+}
+
+.summary__label {
+  font-size: 12.5px;
+  color: var(--text-dim);
+}
+
+.summary__value {
+  font-family: var(--font-mono);
+  font-size: 15px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.summary__value[data-tone="win"] {
+  color: var(--ok);
+}
+
+.summary__value[data-tone="lose"] {
+  color: var(--danger);
+}
+
+/* --------------------------------------------------------------------------
+   レスポンシブ（PC では横に広げる）
+   -------------------------------------------------------------------------- */
+
+@media (min-width: 720px) {
+  body {
+    font-size: 15.5px;
+  }
+
+  .app {
+    padding: 20px;
+    padding-bottom: calc(20px + 76px);
+    gap: 16px;
+  }
+
+  .board {
+    grid-template-columns: minmax(0, 1.9fr) minmax(200px, 1fr);
+    align-items: start;
+  }
+
+  .hand__list {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .console__sql {
+    font-size: 13px;
+    min-height: 96px;
+  }
+
+  .status__score {
+    font-size: 26px;
+  }
+}
+
+@media (min-width: 1024px) {
+  .hand__list {
+    grid-template-columns: repeat(8, minmax(0, 1fr));
+  }
+
+  .card {
+    padding: 8px;
+  }
+
+  .card__name {
+    font-size: 11.5px;
+  }
+}
+
+/* 極端に狭い画面（320px 前後）でも崩れないように */
+@media (max-width: 359px) {
+  .hand__list {
+    grid-template-columns: 1fr;
+  }
+
+  .status__score {
+    font-size: 19px;
+  }
+}

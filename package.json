@@ -9,13 +9,22 @@
   },
   "scripts": {
     "start": "node src/cli/main.ts",
-    "seed": "node src/data/seed.ts",
     "test": "node --test",
-    "typecheck": "tsc --noEmit",
-    "balance": "node scripts/balance.ts"
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.web.json",
+    "balance": "node scripts/balance.ts",
+    "build:web": "node scripts/build-web.ts",
+    "serve:web": "node scripts/build-web.ts --serve"
   },
   "devDependencies": {
+    "@types/jsdom": "^30.0.0",
     "@types/node": "^24.0.0",
+    "@types/sql.js": "^1.4.11",
+    "esbuild": "^0.28.2",
+    "jsdom": "^31.0.1",
+    "sql.js": "^1.16.0",
     "typescript": "^5.9.0"
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true
   }
 }

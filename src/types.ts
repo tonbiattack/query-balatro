@@ -85,6 +85,14 @@ export interface FragmentCard {
   clause: ClauseKind;
   /** タグ（役・Boss・ジョーカー判定用）。先頭が主タグ（UI の色分けに使う）。 */
   kinds: FragmentKind[];
+  /**
+   * JOIN 断片が結合するテーブル名（`clause === "JOIN"` のときだけ意味を持つ）。
+   *
+   * 同じテーブルを2回 JOIN すると `ambiguous column name` で必ず失敗するため、
+   * 組み立て時に**テーブル単位で重複を除く**。その判定にこの情報を使う。
+   * 例: `join-suits` は `["suits"]`。
+   */
+  joins?: string[];
   /** この断片を使ったときに加算される基礎チップ */
   chips: number;
   /** フレーバーテキスト（任意） */

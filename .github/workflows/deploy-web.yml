@@ -1,0 +1,163 @@
+name: Build and Deploy Web UI
+
+# main に更新が入ったら、Web UI をビルドして GitHub Pages へ公開する。
+# Issue #8「GitHub Pagesへ自動デプロイするGitHub Actionsワークフローを用意する」に対応。
+#
+# ## 前提
+#
+# GitHub Pages は **public リポジトリ** でのみ無料プランで使える。
+# private リポジトリの場合は Pages が有効化できないため、デプロイはスキップし
+# ビルド成果物を artifact として残す（ローカルで `dist/` を配れば遊べる）。
+#
+# Pages を有効にする手順は README の「デプロイ」を参照。
+
+on:
+  push:
+    branches: [main]
+  # PR でも検証だけは回す（壊れたものを main に入れないため）
+  pull_request:
+    branches: [main]
+  # 手動実行もできるようにする（デプロイだけやり直したいとき）
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# 同時実行を避ける（後から来たものを優先）
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # 1. 検証（テストと型チェックが通らなければ先へ進まない）
+  # ---------------------------------------------------------------------------
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: 依存をインストール
+        run: npm ci
+
+      - name: 型チェック（Node 側）
+        run: npx tsc --noEmit
+
+      - name: 型チェック（Web 側）
+        run: npx tsc --noEmit -p tsconfig.web.json
+
+      - name: テスト
+        run: node --test
+
+  # ---------------------------------------------------------------------------
+  # 2. ビルド
+  # ---------------------------------------------------------------------------
+  build:
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: 依存をインストール
+        run: npm ci
+
+      - name: Web UI をビルド
+        run: node scripts/build-web.ts
+
+      - name: ビルド成果物を確認
+        run: |
+          set -e
+          for f in index.html styles.css app.js sql-wasm.wasm .nojekyll; do
+            if [ ! -f "dist/$f" ]; then
+              echo "::error::dist/$f がありません"
+              exit 1
+            fi
+          done
+          echo "ビルド成果物:"
+          ls -lh dist/
+
+      # 成果物は常に残す（Pages が使えない環境でもダウンロードして配れる）
+      - name: 成果物をアップロード
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-dist
+          path: dist
+          retention-days: 30
+
+  # ---------------------------------------------------------------------------
+  # 3. GitHub Pages が使えるか判定する
+  #
+  # private リポジトリ + 無料プランでは Pages を有効化できない。
+  # その場合はデプロイをスキップし、失敗ではなく「スキップ」として扱う
+  # （ビルド自体は成功しているので、CI を赤くする理由がない）。
+  # ---------------------------------------------------------------------------
+  check-pages:
+    needs: build
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    outputs:
+      available: ${{ steps.probe.outputs.available }}
+    steps:
+      - name: Pages が有効か確認
+        id: probe
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh api "repos/${{ github.repository }}/pages" >/dev/null 2>&1; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+            echo "GitHub Pages は有効です。デプロイします。"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::GitHub Pages が有効ではありません。デプロイをスキップします。"
+            echo "::notice::private リポジトリでは無料プランで Pages を使えません。"
+            echo "::notice::リポジトリを public にするか、Pages を有効化してください。"
+          fi
+
+  # ---------------------------------------------------------------------------
+  # 4. デプロイ（Pages が使えるときだけ）
+  # ---------------------------------------------------------------------------
+  deploy:
+    needs: check-pages
+    if: needs.check-pages.outputs.available == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: 依存をインストール
+        run: npm ci
+
+      - name: Web UI をビルド
+        run: node scripts/build-web.ts
+
+      - name: Pages 用に設定
+        uses: actions/configure-pages@v5
+
+      - name: 成果物をアップロード
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+      - name: GitHub Pages へデプロイ
+        id: deployment
+        uses: actions/deploy-pages@v4

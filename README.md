@@ -2,7 +2,13 @@
 
 Balatro系、クエリのパターンで役を作るスコアアタック。
 
-> ステータス: **MVP実装中**（コアループ・CLIまで実装）
+> ステータス: **MVP完成**（CLI + Web UI）
+
+## ブラウザで遊ぶ
+
+**https://tonbiattack.github.io/query-balatro/**
+
+インストール・ログイン不要。PC・スマホのブラウザで開くだけで遊べます。
 
 ## コンセプト
 
@@ -14,22 +20,54 @@ Balatro系、クエリのパターンで役を作るスコアアタック。
 2. スコア（チップ×マルチ）が計算される
 3. 目標チップに届かなければ残りプレイ回数で再挑戦、ディスカードで手札を入れ替える
 4. ブラインドを3つ（Small／Big／Boss）抜けるとアンティが上がる
+5. アンティ8のBossを突破すればクリア
+
+### 役（強い順）
+
+| 役 | 条件 | マルチ |
+|---|---|---|
+| ロイヤル相当 | JOIN + WINDOW + GROUP BY | ×10 |
+| フルハウス相当 | WINDOW を含む | ×6 |
+| ストレート相当 | JOIN を含む | ×4 |
+| フラッシュ相当 | BETWEEN か IN を含む | ×3 |
+| ツーペア相当 | LIKE を含む | ×2.5 |
+| ペア相当 | WHERE を含む | ×2 |
+| ハイカード相当 | 1行以上返った | ×1 |
 
 ## 仕様書
 
-詳細は [docs/SPEC.md](docs/SPEC.md) を参照。
+詳細は [docs/SPEC.md](docs/SPEC.md)、バランスの根拠は [docs/BALANCE.md](docs/BALANCE.md) を参照。
 
-## クイックスタート
+## 2つの遊び方
+
+同じゲームロジックを CLI と Web の両方から使えます。**計算結果は自動テストで一致を保証**しています。
+
+| | Web UI | CLI |
+|---|---|---|
+| 起動 | ブラウザでURLを開く | `npm start` |
+| 操作 | カードをクリック／タップ | コマンド入力 |
+| 向いている場面 | 初めて遊ぶ、スマホで遊ぶ | キーボードで速く打ちたい |
+
+### Web UI の操作
+
+| 操作 | 動作 |
+|---|---|
+| カードをクリック／タップ | 選択・解除（選択順に番号が付く） |
+| プレイ | 選んだ断片でクエリを実行 |
+| ディスカード | 選んだ断片を捨てて引き直す |
+| えらび直す | 選択をすべて解除 |
+| `Enter` | プレイ |
+| `Esc` | 選択を解除 |
+| `Backspace` | 最後に選んだ1枚を戻す |
+
+選んだ瞬間に、組み上がる SQL・成立する役・予想スコア・効いているジョーカーが更新されます。
+
+### CLI の操作
 
 ```powershell
 npm install
-npm start          # CLIでプレイ
-npm test           # 全テスト
-npm run typecheck  # 型チェック
-npm run balance    # バランス検証（非対話）
+npm start
 ```
-
-### 操作方法
 
 | コマンド | 動作 |
 |---|---|
@@ -38,35 +76,73 @@ npm run balance    # バランス検証（非対話）
 | `h` | ヘルプ |
 | `q` | 終了 |
 
-## MVP範囲
+## 開発
 
-- 1プレイ完結型の最小コアループのみ
-- DBは SQLite（読み取り専用接続）
-- オンライン対戦・ランキングは対象外
+```powershell
+npm install
+npm test              # 全テスト（266件）
+npm run typecheck     # 型チェック（Node + Web の両方）
+npm run balance       # バランス検証（非対話・40ラン）
+npm run build:web     # Web UI を dist/ にビルド
+npm run serve:web     # ビルドして http://localhost:4173/ で確認
+```
 
-## 技術スタック
-
-- 言語: TypeScript（Node.js のネイティブ型ストリッピングで直接実行。ビルド不要）
-- 実行環境: Node.js 22.6 以上
-- DB: SQLite（`node:sqlite`）
-- UI: CLI（`node:readline/promises`）
-- テスト: `node --test`
-- 外部依存: なし
-
-## モジュール構成
+### 構成
 
 ```
 src/
   types.ts        共有型契約（全モジュールが依存する唯一の型定義）
   data/           断片・役・ジョーカー・Boss・アンティ・DBスキーマ
-  db/             読み取り専用クエリ実行基盤（QueryEngine）
+  db/
+    build.ts        SQL 組み立て（Node/Web 共通）
+    validate.ts     実行前検証・Boss妨害・結果集計（Node/Web 共通）
+    engine.ts       Node 版エンジン（node:sqlite）
+    browser-engine.ts  Web 版エンジン（sql.js / WebAssembly）
   logic/          役判定・スコア計算・ラン進行（RunController）
-  cli/            対話UI
+    index.ts        ブラウザでも安全な公開窓口
+    node.ts         Node 専用の公開窓口（既定エンジンの遅延解決）
+  cli/            CLI の入出力
+  web/            Web UI（DOM 層・状態管理・プレビュー）
 tests/            node:test
-scripts/          バランス検証
+scripts/
+  balance.ts      バランス検証
+  build-web.ts    Web ビルド
 ```
 
-依存方向は `types ← data ← db ← logic ← cli`。逆方向の import を禁止する。
+依存方向は `types ← data ← db ← logic ← cli/web`。逆方向の import を禁止する。
+
+### 技術スタック
+
+| 項目 | CLI | Web |
+|---|---|---|
+| 言語 | TypeScript | TypeScript |
+| 実行 | Node.js 22.6+（型ストリッピングで直接実行） | ブラウザ |
+| DB | `node:sqlite` | `sql.js`（WebAssembly 版 SQLite） |
+| UI | `node:readline/promises` | DOM + CSS |
+| ビルド | 不要 | esbuild |
+
+**ゲームロジックは共通**で、違うのは「SQLite をどう動かすか」と「どう表示するか」だけです。
+
+### なぜ sql.js なのか
+
+`node:sqlite` はブラウザで動きません。`sql.js` は SQLite を WebAssembly にコンパイルしたもので、
+ブラウザでも Node でも同じ SQLite エンジンとして動きます。
+
+両エンジンの結果が一致することは `tests/browser-engine.test.ts` で検証しています
+（全断片の単体・2枚の全組み合わせ・Boss妨害・取得上限・スコア内訳・ラン進行）。
+
+### デプロイ
+
+`main` に push すると GitHub Actions が自動でビルドして GitHub Pages へ公開します
+（`.github/workflows/deploy-web.yml`）。
+
+テストと型チェックが通らない場合はデプロイされません。
+
+## MVP範囲
+
+- 1プレイ完結型のコアループ
+- DBは SQLite（読み取り専用）
+- オンライン対戦・ランキングは対象外
 
 ## Issue方針
 
@@ -75,5 +151,7 @@ scripts/          バランス検証
 - #3 ロジック（コアループ実装）
 - #4 データ（生成）
 - #5 UI/検証（最小UIとプレイ検証）
+- #7 UX改善（高速Web UI）
+- #8 Web対応（GitHub Pages公開）
 
 各Issueは「目的・やること・受け入れ条件・対象外」で管理する。
